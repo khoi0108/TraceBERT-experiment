@@ -134,7 +134,9 @@ class Examples:
         feature = tokenizer.encode_plus(
             text=nl_tks,
             text_pair=pl_tks,
-            pad_to_max_length=True,
+            # pad_to_max_length=True,
+            padding='max_length',
+            truncation=True,
             return_attention_mask=True,
             return_token_type_ids=True,
             max_length=512,

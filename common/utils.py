@@ -162,7 +162,7 @@ def load_check_point(model, ckpt_dir, optimizer, scheduler):
     model_path = os.path.join(ckpt_dir, MODEL_FNAME)
     arg_path = os.path.join(ckpt_dir, ARG_FNAME)
 
-    model.load_state_dict(torch.load(model_path))
+    model.load_state_dict(torch.load(model_path, map_location="cpu"), strict=False)
     if os.path.isfile(optmz_path):
         logger.info("Loading optimizer...")
         optimizer.load_state_dict(torch.load(optmz_path))
