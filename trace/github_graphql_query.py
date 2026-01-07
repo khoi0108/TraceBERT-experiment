@@ -44,7 +44,7 @@ def make_github_graphql_request(token, variables):
             return None
         
 
-def get_issue_count(repo_path, token):
+def get_issue_count(repo_path, token)->int:
         """
 				Executes a GraphQL query to fetch issues, pull requests, and issue links from a GitHub repository.
 
@@ -77,3 +77,4 @@ def get_issue_count(repo_path, token):
             else:
                 print("GraphQL request failed, stopping further processing.")
                 break
+        return issue_count

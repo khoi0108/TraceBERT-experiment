@@ -4,6 +4,7 @@ import os
 import random
 import re
 import sys
+import emoji
 
 import pandas as pd
 from tqdm.auto import tqdm
@@ -94,13 +95,15 @@ def clean_artifacts(proj_dir):
     clean_links = []
 
     if not os.path.isfile(clean_issue_file):
-        for iss in tqdm(issue):
+        for iss in tqdm(issue, desc="Cleaning Issues", position=0, leave=True):
             if pd.isnull(iss.desc):
                 iss.desc = ""
             iss.desc = re.sub("<!-.*->", "", iss.desc)
             iss.desc = re.sub("```.*```", "", iss.desc, flags=re.DOTALL)
+            iss.desc = emoji.replace_emoji(iss.desc, replace="")
             iss.desc = " ".join(word_tokenize(iss.desc))
-            iss.comments = " ".join(word_tokenize(iss.comments.split("\n")[0]))  # use only the first comment (title)
+            iss.comments = " ".join(word_tokenize(iss.comments.split("\n")[0]))
+            iss.comments = emoji.replace_emoji(iss.comments, replace="")
             clean_issues[iss.issue_id] = iss
     else:
         tmp_issues = __read_artifacts(clean_issue_file, type="issue")
@@ -108,7 +111,7 @@ def clean_artifacts(proj_dir):
             clean_issues[iss.issue_id] = iss
 
     if not os.path.isfile(clean_commit_file):
-        for cm in tqdm(commit):
+        for cm in tqdm(commit, desc="Cleaning Commits", position=0, leave=True):
             diff_sents = eval(cm.diffs)
             if len(diff_sents) < 5:
                 continue
@@ -117,6 +120,8 @@ def clean_artifacts(proj_dir):
                 sent = sent.strip("+- ")
                 diff_tokens.extend(word_tokenize(sent))
             cm.diffs = " ".join(diff_tokens)
+            cm.diffs = emoji.replace_emoji(cm.diffs, replace="")
+            cm.summary = emoji.replace_emoji(cm.summary, replace="")
             cm.summary = " ".join(word_tokenize(cm.summary))
             clean_commits[cm.commit_id] = cm
     else:

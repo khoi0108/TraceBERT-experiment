@@ -16,7 +16,7 @@ import re
 import argparse
 import git as local_git  # pip install GitPython. Lib operates on local repo to get commits
 import pandas as pd
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +101,7 @@ class GitRepoCollector:
             reset_timestamp = calendar.timegm(core_rate_limit.reset.timetuple())
             sleep_time = reset_timestamp - calendar.timegm(time.gmtime())
             logger.info("Wait until git core API rate limit reset, reset time = {} seconds".format(sleep_time))
-            for _ in tqdm(range(max(0, sleep_time)), desc="Rate Limit Wait"):
+            for _ in tqdm(range(max(0, sleep_time)), desc="Rate Limit Wait", position=0, leave=True):
                 time.sleep(1)
             remaining = git.get_rate_limit().resources.core.remaining
 
@@ -120,7 +120,7 @@ class GitRepoCollector:
         issues = repo.get_issues(state="all")
         issue_count = get_issue_count(self.repo_path, self.token)
 
-        for i in tqdm(range(start_index, issue_count)):
+        for i in tqdm(range(start_index, issue_count), desc="Issues", position=0, leave=True):
             try:
                 issue = issues[i]
                 issue_number = issue.number
