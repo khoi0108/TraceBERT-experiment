@@ -12,7 +12,8 @@ sys.path.append("../..")
 import torch
 from torch.optim import AdamW
 from torch.utils.tensorboard import SummaryWriter
-from tqdm import trange, tqdm
+from tqdm import trange
+from tqdm.auto import tqdm
 from transformers import BertConfig, get_linear_schedule_with_warmup
 
 from common.utils import save_check_point, load_check_point, write_tensor_board, set_seed, evaluate_retrival, \

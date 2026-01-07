@@ -6,7 +6,7 @@ import re
 import sys
 
 import pandas as pd
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 sys.path.append("..")
 sys.path.append("../..")
@@ -64,9 +64,9 @@ def __save_artifacts(art_list, type, output_file):
     df = pd.DataFrame()
     for art in art_list:
         if type == "issue" or type == "commit":
-            df = df.append(art.to_dict(), ignore_index=True)
+            df = pd.concat([df, pd.DataFrame([art.to_dict()])], ignore_index=True)
         elif type == "link":
-            df = df.append({"issue_id": art[0], "commit_id": art[1]}, ignore_index=True)
+            df = pd.concat([df, pd.DataFrame([{"issue_id": art[0], "commit_id": art[1]}])], ignore_index=True)
         else:
             raise Exception("wrong artifact type")
     df.to_csv(output_file)
@@ -191,12 +191,12 @@ if __name__ == "__main__":
     logger.setLevel("INFO")
     # projects = ['dbcli/pgcli']
     # projects = ['pallets/flask']
-    projects = ['dbcli/pgcli', 'pallets/flask', 'keras-team/keras']
+    projects = ['fastapi/fastapi']
 
     config = configparser.ConfigParser()
     config.read('credentials.cfg')
     
-    output_dir = './data/git_data'
+    output_dir = '../../data/git_data/training related data'
 
     for repo_path in projects:
         proj_data_dir = os.path.join(output_dir, repo_path)
@@ -204,8 +204,8 @@ if __name__ == "__main__":
         if not os.path.exists(os.path.join(proj_data_dir, 'issue.csv')):
             # if the issue_csv is not available
             logger.info("Processing repo: {}".format(repo_path))
-            git_token = config['GIT']['TOKEN']
-            download_dir = 'G:/Document/git_projects'
+            git_token = config.get('github', 'token')
+            download_dir = '../../../git_repos'
             rpc = GitRepoCollector(git_token, download_dir, output_dir, repo_path)
             rpc.create_issue_commit_dataset()
         # clean the issue and commits by:
@@ -225,6 +225,6 @@ if __name__ == "__main__":
             clean_links_file = os.path.join(proj_data_dir, 'clean_link.csv')
             clean_links = __read_artifacts(clean_links_file, 'link')
         else:
-            clean_issue, clean_commits, clean_links = clean_artifacts(proj_data_dir)
+            clean_issues, clean_commits, clean_links = clean_artifacts(proj_data_dir)
         
         split(clean_issues, clean_commits, clean_links, proj_data_dir)

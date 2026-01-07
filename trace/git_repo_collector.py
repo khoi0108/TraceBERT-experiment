@@ -9,7 +9,9 @@ import os
 import time
 
 from github import Github, \
-    RateLimitExceededException  # pip install PyGithub. Lib operates on remote github to get issues
+    RateLimitExceededException, \
+    Auth  # pip install PyGithub. Lib operates on remote github to get issues
+from  github_graphql_query import get_issue_count
 import re
 import argparse
 import git as local_git  # pip install GitPython. Lib operates on local repo to get commits
@@ -87,17 +89,22 @@ class GitRepoCollector:
         local_repo = local_git.Repo(clone_path)
         return local_repo
 
+    
     def wait_for_rate_limit(self, git):
-        remaining = git.get_rate_limit().core.remaining
+        # NEW: use .resources.core instead of .core
+        rate_limit = git.get_rate_limit()
+        remaining = rate_limit.resources.core.remaining
         logger.info("Remaining requests = {}".format(remaining))
+
         while remaining < 10:
-            core_rate_limit = git.get_rate_limit().core
+            core_rate_limit = git.get_rate_limit().resources.core
             reset_timestamp = calendar.timegm(core_rate_limit.reset.timetuple())
             sleep_time = reset_timestamp - calendar.timegm(time.gmtime())
-            logger.info("Wait untill git core API rate limit reset, reset time = {} seconds".format(sleep_time))
-            for i in tqdm(range(sleep_time), desc="Rate Limit Wait"):
+            logger.info("Wait until git core API rate limit reset, reset time = {} seconds".format(sleep_time))
+            for _ in tqdm(range(max(0, sleep_time)), desc="Rate Limit Wait"):
                 time.sleep(1)
-            remaining = git.get_rate_limit().core.remaining
+            remaining = git.get_rate_limit().resources.core.remaining
+
 
     def get_issue(self, issue_file_path):
         if os.path.isfile(issue_file_path) and os.path.getsize(issue_file_path) > 0:
@@ -105,14 +112,15 @@ class GitRepoCollector:
         else:
             issue_df = pd.DataFrame(columns=["issue_id", "issue_desc", "issue_comments", "closed_at", "created_at"])
         start_index = issue_df.shape[0]
-        git = Github(login_or_token=self.token)
+        git = Github(auth=Auth.Token(self.token))
         git.get_user()
         self.wait_for_rate_limit(git)
         repo = git.get_repo(self.repo_path)
         logger.info("creating issue.csv")
         issues = repo.get_issues(state="all")
+        issue_count = get_issue_count(self.repo_path, self.token)
 
-        for i in tqdm(range(start_index, issues.totalCount)):
+        for i in tqdm(range(start_index, issue_count)):
             try:
                 issue = issues[i]
                 issue_number = issue.number
@@ -126,8 +134,10 @@ class GitRepoCollector:
                 for comment in issue.get_comments():
                     if comment.body:
                         comments.append(comment.body)
-                issue = Issue(issue_number, desc, "\n".join(comments), issue_create_time, issue_close_time)
-                issue_df = issue_df.append(issue.to_dict(), ignore_index=True)
+                issue = Issue(str(issue_number), desc, "\n".join(comments), issue_create_time, issue_close_time)
+                issue_df_delta = pd.DataFrame([issue.to_dict()])
+                issue_df_delta.dropna(axis=1, how='all')
+                issue_df = pd.concat([issue_df, issue_df_delta], ignore_index=True)  
                 issue_df.to_csv(issue_file_path)
             except RateLimitExceededException:
                 self.wait_for_rate_limit(git)
@@ -154,7 +164,12 @@ class GitRepoCollector:
                         differs.add(diff_line)
             files = list(commit.stats.files)
             commit = Commit(id, summary, differs, files, create_time)
-            commit_df = commit_df.append(commit.to_dict(), ignore_index=True)
+            # commit_df = commit_df.append(commit.to_dict(), ignore_index=True)
+            commit_dict = commit.to_dict()
+            commit_dict['diff'] = list(commit_dict['diff'])
+            commit_df_delta = pd.DataFrame([commit_dict])
+            commit_df_delta.dropna(axis=1, how='all')
+            commit_df = pd.concat([commit_df, commit_df_delta], ignore_index=True)
         commit_df.to_csv(commit_file_path)
 
     def get_issue_commit_links(self, link_file_path, issue_file_path, commit_file_path, link_pattern='#\d+'):
@@ -204,6 +219,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser("Github script")
     parser.add_argument("-u", help="user name")
     parser.add_argument("-p", help="password")
+    parser.add_argument("-t", help="token")
     parser.add_argument("-d", help="download path")
     parser.add_argument("-o", help="output dir root")
     parser.add_argument("-r", nargs="+", help="repo path in github, a list of repo path can be passed")
@@ -211,5 +227,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
     for repo_path in args.r:
         logger.info("Processing repo: {}".format(repo_path))
-        rpc = GitRepoCollector(args.u, args.p, args.d, args.o, repo_path)
+        rpc = GitRepoCollector(args.t, args.d, args.o, repo_path)
         rpc.create_issue_commit_dataset()
