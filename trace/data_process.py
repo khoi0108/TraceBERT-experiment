@@ -102,8 +102,11 @@ def clean_artifacts(proj_dir):
             iss.desc = re.sub("```.*```", "", iss.desc, flags=re.DOTALL)
             iss.desc = emoji.replace_emoji(iss.desc, replace="")
             iss.desc = " ".join(word_tokenize(iss.desc))
-            iss.comments = " ".join(word_tokenize(iss.comments.split("\n")[0]))
-            iss.comments = emoji.replace_emoji(iss.comments, replace="")
+            if isinstance(iss.comments, float):
+                iss.comments = "" 
+            else:
+                iss.comments = " ".join(word_tokenize(iss.comments.split("\n")[0]))
+                iss.comments = emoji.replace_emoji(iss.comments, replace="")
             clean_issues[iss.issue_id] = iss
     else:
         tmp_issues = __read_artifacts(clean_issue_file, type="issue")
@@ -119,8 +122,8 @@ def clean_artifacts(proj_dir):
             for sent in diff_sents:
                 sent = sent.strip("+- ")
                 diff_tokens.extend(word_tokenize(sent))
-            cm.diffs = " ".join(diff_tokens)
             cm.diffs = emoji.replace_emoji(cm.diffs, replace="")
+            cm.diffs = " ".join(diff_tokens)
             cm.summary = emoji.replace_emoji(cm.summary, replace="")
             cm.summary = " ".join(word_tokenize(cm.summary))
             clean_commits[cm.commit_id] = cm
@@ -196,18 +199,19 @@ if __name__ == "__main__":
     logger.setLevel("INFO")
     # projects = ['dbcli/pgcli']
     # projects = ['pallets/flask']
-    projects = ['fastapi/fastapi']
+    projects = ['pallets/flask']
 
     config = configparser.ConfigParser()
     config.read('credentials.cfg')
     
-    output_dir = '../../data/git_data/training related data'
+    output_dir = '../../data/git_data/training related data v2'
 
     for repo_path in projects:
         proj_data_dir = os.path.join(output_dir, repo_path)
         
-        if not os.path.exists(os.path.join(proj_data_dir, 'issue.csv')):
-            # if the issue_csv is not available
+        if not (os.path.exists(os.path.join(proj_data_dir, 'issue.csv')) 
+           and (os.path.exists(os.path.join(proj_data_dir, 'commit.csv')))):
+            # if either the issue_csv or commit_csv is not available
             logger.info("Processing repo: {}".format(repo_path))
             git_token = config.get('github', 'token')
             download_dir = '../../../git_repos'

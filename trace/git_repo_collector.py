@@ -11,7 +11,7 @@ import time
 from github import Github, \
     RateLimitExceededException, \
     Auth  # pip install PyGithub. Lib operates on remote github to get issues
-from  github_graphql_query import get_issue_count
+from  github_graphql_query import get_issues
 import re
 import argparse
 import git as local_git  # pip install GitPython. Lib operates on local repo to get commits
@@ -106,7 +106,7 @@ class GitRepoCollector:
             remaining = git.get_rate_limit().resources.core.remaining
 
 
-    def get_issue(self, issue_file_path):
+    def get_issues(self, issue_file_path):
         if os.path.isfile(issue_file_path) and os.path.getsize(issue_file_path) > 0:
             issue_df = pd.read_csv(issue_file_path)
         else:
@@ -115,62 +115,106 @@ class GitRepoCollector:
         git = Github(auth=Auth.Token(self.token))
         git.get_user()
         self.wait_for_rate_limit(git)
-        repo = git.get_repo(self.repo_path)
         logger.info("creating issue.csv")
-        issues = repo.get_issues(state="all")
-        issue_count = get_issue_count(self.repo_path, self.token)
+        issues = get_issues(self.repo_path, self.token)
 
-        for i in tqdm(range(start_index, issue_count), desc="Issues", position=0, leave=True):
+        for i in tqdm(range(start_index, len(issues)), desc="Issues", position=0, leave=True):
             try:
-                issue = issues[i]
-                issue_number = issue.number
+                issue = issues[i]["node"]
+                issue_number = issue["number"]
                 comments = []
-                comments.append(issue.title)
+                comments.append(issue["title"])
+                for comment in issue["comments"]["edges"]:
+                    comments.append(comment["node"]["bodyText"]) 
                 desc = ""
-                if issue.body:
-                    desc = issue.body
-                issue_close_time = issue.closed_at
-                issue_create_time = issue.created_at
-                for comment in issue.get_comments():
-                    if comment.body:
-                        comments.append(comment.body)
+                if issue["body"]:
+                    desc = issue["body"]
+                issue_close_time = issue["updatedAt"]
+                issue_create_time = issue["createdAt"]
                 issue = Issue(str(issue_number), desc, "\n".join(comments), issue_create_time, issue_close_time)
                 issue_df_delta = pd.DataFrame([issue.to_dict()])
-                issue_df_delta.dropna(axis=1, how='all')
-                issue_df = pd.concat([issue_df, issue_df_delta], ignore_index=True)  
-                issue_df.to_csv(issue_file_path)
+                issue_df = pd.concat([issue_df, issue_df_delta], ignore_index=True)
             except RateLimitExceededException:
                 self.wait_for_rate_limit(git)
         self.wait_for_rate_limit(git)
+        issue_df.to_csv(issue_file_path)
 
     def get_commits(self, commit_file_path):
-        EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+        """
+        Retrieves commit data from a cloned local repository, processes the data, and stores it in a CSV file.
+        If the CSV file already exists, the method logs a message and returns, skipping the creation process.
+
+        Args:
+            commit_file_path (str): The path where the resulting CSV file will be saved.
+
+        Returns:
+            None. The results are stored in a CSV file at the specified path.
+        """
         local_repo = self.clone_project()
         if os.path.isfile(commit_file_path):
-            logger.info("commits already existing, skip creating...")
+            print("commits already existing, skip creating...")
             return
-        logger.info("creating commit.csv...")
+        print("creating commit.csv...")
         commit_df = pd.DataFrame(columns=["commit_id", "summary", "diff", "files", "commit_time"])
-        for i, commit in tqdm(enumerate(local_repo.iter_commits())):
-            id = commit.hexsha
-            summary = commit.summary
-            create_time = commit.committed_datetime
-            parent = commit.parents[0] if commit.parents else EMPTY_TREE_SHA
-            differs = set()
-            for diff in commit.diff(parent, create_patch=True):
-                diff_lines = str(diff).split("\n")
-                for diff_line in diff_lines:
-                    if diff_line.startswith("+") or diff_line.startswith("-") and '@' not in diff_line:
-                        differs.add(diff_line)
-            files = list(commit.stats.files)
-            commit = Commit(id, summary, differs, files, create_time)
-            # commit_df = commit_df.append(commit.to_dict(), ignore_index=True)
-            commit_dict = commit.to_dict()
-            commit_dict['diff'] = list(commit_dict['diff'])
-            commit_df_delta = pd.DataFrame([commit_dict])
-            commit_df_delta.dropna(axis=1, how='all')
-            commit_df = pd.concat([commit_df, commit_df_delta], ignore_index=True)
-        commit_df.to_csv(commit_file_path)
+        processed_commits = set()
+
+        # Iterate over all branches, including remote branches
+        branches = list(local_repo.branches) + [ref for ref in local_repo.remotes.origin.refs if 'HEAD' not in ref.name]
+        for branch in branches:
+            print(f"Processing branch: {branch.name}")
+            for commit in tqdm(local_repo.iter_commits(branch.name)):
+                if commit.hexsha in processed_commits:
+                    continue
+
+                id = commit.hexsha
+                summary = commit.summary
+                create_time = commit.committed_datetime
+                differs = set()
+                files = []
+
+                import subprocess   
+                cmd = [
+                "git", "--no-pager",
+                "diff-tree",
+                "--root",
+                "-r",
+                "-p",
+                "--no-renames",
+                "--no-color",
+                commit.hexsha,
+                ]
+
+                current_file = None
+
+                with subprocess.Popen(cmd, cwd=local_repo.working_dir,
+                                      stdout=subprocess.PIPE, encoding='utf-8', 
+                                      bufsize=1, text=True, errors='ignore') as proc:
+                    for line in proc.stdout:
+                        line = line.rstrip("\n")
+
+                        # Detect new file diff header
+                        if line.startswith("diff --git"):
+                            parts = line.split()
+                            if len(parts) >= 4:
+                                current_file = parts[2][2:]  # strip "a/"
+                                files.append(current_file)
+
+                        # Collect added/removed lines, ignore diff headers
+                        elif current_file and line and line[0] in "+-" and not line.startswith(("+++", "---", "@@")):
+                            differs.add(line)
+
+                    proc.wait()
+
+                commit_record = {
+                    "commit_id": id,
+                    "summary": summary,
+                    "diff": list(differs),
+                    "files": files,
+                    "commit_time": create_time
+                }
+                commit_df = pd.concat([commit_df, pd.DataFrame([commit_record])], ignore_index=True)
+                processed_commits.add(id)
+        commit_df.to_csv(commit_file_path, index=False)
 
     def get_issue_commit_links(self, link_file_path, issue_file_path, commit_file_path, link_pattern='#\d+'):
         # Extract links from the commits
@@ -208,7 +252,7 @@ class GitRepoCollector:
         link_file_path = os.path.join(output_dir, "link.csv")
 
         if not os.path.isfile(issue_file_path):
-            self.get_issue(issue_file_path)
+            self.get_issues(issue_file_path)
         if not os.path.isfile(commit_file_path):
             self.get_commits(commit_file_path)
         self.get_issue_commit_links(link_file_path, issue_file_path, commit_file_path)
@@ -217,8 +261,6 @@ class GitRepoCollector:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("Github script")
-    parser.add_argument("-u", help="user name")
-    parser.add_argument("-p", help="password")
     parser.add_argument("-t", help="token")
     parser.add_argument("-d", help="download path")
     parser.add_argument("-o", help="output dir root")

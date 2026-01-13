@@ -12,9 +12,9 @@ sys.path.append("../../common")
 
 from code_search.single.single_eval import test
 from code_search.twin.twin_eval import get_eval_args
-from models import TBertS
+from common.models import TBertS
 from trace_single.train_trace_single import load_examples
-from utils import MODEL_FNAME
+from common.utils import MODEL_FNAME
 
 if __name__ == "__main__":
     args = get_eval_args()
