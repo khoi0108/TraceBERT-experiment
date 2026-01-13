@@ -3,11 +3,86 @@ import configparser
 # GitHub GraphQL API URL
 GITHUB_GRAPHQL_URL = "https://api.github.com/graphql"
 
-# Query to get github issues
 GITHUB_GRAPHQL_QUERY = """
-query($issuesCursor: String, $owner: String!, $name: String!) {
+query($issuesTimelineCursor: String, $issuesCursor: String, $pullRequestsCursor: String, $owner: String!, $name: String!) {
   repository(owner: $owner, name: $name) {
-    basicIssues: issues(first: 50, after: $issuesCursor) { 
+    issuesWithTimeline: issues(first: 25, after: $issuesTimelineCursor) {
+      pageInfo {
+        endCursor
+        hasNextPage
+      }
+      edges {
+        node {
+          number
+          timelineItems(first: 50, itemTypes: [CROSS_REFERENCED_EVENT, CONNECTED_EVENT, REFERENCED_EVENT, CLOSED_EVENT, DISCONNECTED_EVENT]) {
+            edges {
+              node {
+                __typename
+                ... on DisconnectedEvent {
+                  id
+                  subject {
+                    __typename
+                    ... on PullRequest {
+                      number
+                      isCrossRepository
+                    }
+                    ... on Issue {
+                      number
+                    }
+                  }
+                }
+                ... on ReferencedEvent {
+                  id
+                  commit {
+                    oid
+                  }
+                }
+                ... on ClosedEvent {
+                  id
+                  closer {
+                    __typename
+                    ... on Commit {
+                      oid
+                    }
+                    ... on PullRequest {
+                      number
+                      isCrossRepository
+                    }
+                  }
+                }
+                ... on CrossReferencedEvent {
+                  id
+                  source {
+                    __typename
+                    ... on PullRequest {
+                      number
+                      isCrossRepository
+                    }
+                    ... on Issue {
+                      number
+                    }
+                  }
+                }
+                ... on ConnectedEvent {
+                  id
+                  subject {
+                    __typename
+                    ... on PullRequest {
+                      number
+                      isCrossRepository
+                    }
+                    ... on Issue {
+                      number
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    basicIssues: issues(first: 25, after: $issuesCursor) { 
     	pageInfo {
         endCursor
         hasNextPage
@@ -30,6 +105,60 @@ query($issuesCursor: String, $owner: String!, $name: String!) {
         }
       }
     }
+    pullRequests(first: 25, after: $pullRequestsCursor) {
+      pageInfo {
+        endCursor
+        hasNextPage
+      }
+      edges {
+        node {
+          number
+          title
+          body
+          isCrossRepository
+          comments(first: 100) {
+            edges {
+              node {
+                id
+                bodyText
+              }
+            }
+          }
+          mergeCommit { 
+          	oid
+          }
+          commits(first: 100) {
+            nodes {
+              commit {
+                oid
+              }
+            }
+          }
+          timelineItems(first:50, itemTypes: [REFERENCED_EVENT, CLOSED_EVENT]) { 
+          	edges {
+              node {
+                __typename
+                ... on ReferencedEvent {
+                  id
+                  commit {
+                    oid
+                  }
+                }
+                ... on ClosedEvent {
+                  id
+                  closer {
+                    __typename
+                    ... on Commit {
+                      oid
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
   }
   rateLimit {
     limit
@@ -40,7 +169,7 @@ query($issuesCursor: String, $owner: String!, $name: String!) {
 }
 
 """
-TEST_REPO_PATH = "bytedance/UI-TARS-desktop"
+TEST_REPO_PATH = "pallets/flask"
 
 def make_github_graphql_request(token, variables):
         """
@@ -74,26 +203,30 @@ def make_github_graphql_request(token, variables):
             return None
         
 
-def get_issues(repo_path, token):
+def run_graphql_query(repo_path, token):
         """
-				Executes a GraphQL query to fetch all issues and comments from a GitHub repository.
+				Executes a GraphQL query to fetch issues, pull requests, and issue links from a GitHub repository.
 
 				Args:
 						repo_path (str): The path to the GitHub repository.
 						token (str): The GitHub token for authentication.
 
 				Returns:
-						tuple: A tuple containing lists of all issues.
+						tuple: A tuple containing lists of all issues, all pull requests, and all issue links.
 				"""
         owner, name = repo_path.split('/')
 
         variables = {
+            "issuesTimelineCursor": None,
             "issuesCursor": None,
+            "pullRequestsCursor": None,
             "owner": owner,
             "name": name
         }
 
         all_issues = []
+        all_pull_requests = []
+        all_issue_links = []
 
         # Make the GraphQL request using the imported function
         while True:
@@ -103,15 +236,25 @@ def get_issues(repo_path, token):
                 try:
 
                     basic_issues = response_data["data"]["repository"]["basicIssues"]
+                    pull_requests = response_data["data"]["repository"]["pullRequests"]
+                    issues_with_timeline = response_data["data"]["repository"]["issuesWithTimeline"]
 
                     # Append issues and pull requests data
                     all_issues.extend(basic_issues["edges"])
+                    all_pull_requests.extend(pull_requests["edges"])
+                    all_issue_links.extend(issues_with_timeline["edges"])
 
                     # Check for pagination
                     if basic_issues["pageInfo"]["hasNextPage"]:
                         variables["issuesCursor"] = basic_issues["pageInfo"]["endCursor"]
                         hasNextPage = True
-
+                    if pull_requests["pageInfo"]["hasNextPage"]:
+                        variables["pullRequestsCursor"] = pull_requests["pageInfo"]["endCursor"]
+                        hasNextPage = True
+                    if issues_with_timeline["pageInfo"]["hasNextPage"]:
+                        variables["issuesTimelineCursor"] = issues_with_timeline["pageInfo"]["endCursor"]
+                        hasNextPage = True
+                    
                     if not hasNextPage:
                         break
                 except:
@@ -120,7 +263,7 @@ def get_issues(repo_path, token):
             else:
                 print("GraphQL request failed, stopping further processing.")
                 break
-        return all_issues
+        return all_issues, all_pull_requests, all_issue_links
 
 
 if __name__ == "__main__":
@@ -128,5 +271,5 @@ if __name__ == "__main__":
     config = configparser.ConfigParser()
     config.read("credentials.cfg")
     token = config.get("github", "token")
-    issues = get_issues(TEST_REPO_PATH, token)
-    print(issues)
+    issues, pull_requests, issue_links = run_graphql_query(TEST_REPO_PATH, token)
+    print(issues, pull_requests, issue_links)
