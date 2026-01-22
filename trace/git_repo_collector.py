@@ -191,20 +191,23 @@ class GitRepoCollector:
         EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
         local_repo = self.clone_project()
         if os.path.isfile(commit_file_path):
-            print("commits already existing, skip creating...")
+            print("Commits already existing, skip creating...")
             return
-        print("creating commit.csv...")
+        print("Creating commit.csv...")
         commit_df = pd.DataFrame(columns=["commit_id", "summary", "diff_added", "diff_removed", "files", "commit_time"])
         processed_commits = set()
 
         # Iterate over all branches, including remote branches
-        branches = list(local_repo.branches) + [ref for ref in local_repo.remotes.origin.refs if 'HEAD' not in ref.name]
+        branches = list(local_repo.branches) + [ref for ref in local_repo.remotes.origin.refs if "HEAD" not in ref.name]
         for branch in branches:
             print(f"Processing branch: {branch.name}")
-            for commit in tqdm(local_repo.iter_commits(branch.name)):
+            commit_count = int(local_repo.git.execute(["git","rev-list", "--count", branch.name]))
+            for commit in tqdm(local_repo.iter_commits(branch.name), 
+                               desc="Processing commits",
+                               total=commit_count):
                 if commit.hexsha in processed_commits:
                     continue
-                
+
                 id = commit.hexsha
                 summary = commit.summary
                 create_time = commit.committed_datetime
@@ -429,7 +432,7 @@ class GitRepoCollector:
                         current_issue_id, 
                         source["number"], 
                         typename, 
-                        self.issues_collection if typename=='Issue' else self.pr_collection
+                        self.issues_collection if typename=="Issue" else self.pr_collection
                     ):
                         continue
                     if typename == "PullRequest":
@@ -479,9 +482,9 @@ class GitRepoCollector:
         links_for_training = self.t1_link_collection.get_all_links()
         # Extract links from the commits
         if os.path.isfile(link_file_path):
-            logger.info("link file already exists, skip creating...")
+            logger.info("Link file already exists, skip creating...")
             return
-        with open(link_file_path, 'a', encoding='utf8') as fout:
+        with open(link_file_path, 'a', encoding="utf8") as fout:
             fout.write("issue_id,commit_id\n")
             for issue, commits in links_for_training.items():
                 for commit in commits:
@@ -502,31 +505,30 @@ class GitRepoCollector:
         """
         from github_graphql_query import run_graphql_query
 
-        cache_file = 'graphql_query_response.json'
-        cache_data = utils.load_cache(self.cache_dir, cache_file)
+        cache_file = "graphql_query_response.json"
+        cache_data = utils.load_cache(cache_file, self.cache_dir)
 
         # If cache is valid, use cached data
-        
-        if cache_data and time.time() - os.path.getmtime(os.path.join(self.cache_dir, cache_file)) < 360000:
-            print('Cache file exist in cache directory. Fetching query response from cache')
+        if cache_data and time.time() - os.path.getmtime(os.path.join(self.cache_dir, cache_file)) < 3600000:
+            print("Cache file exist in cache directory. Fetching query response from cache")
             all_issues, all_pull_requests, all_issue_links = cache_data
         else:
-            # get all the issues, pull requests and issue links using the hql api
+            # get all the issues, pull requests and issue links using the graphql api
+            print("Fetching issues, pull requests, and links")
             all_issues, all_pull_requests, all_issue_links = run_graphql_query(self.repo_path, self.token)
             utils.save_cache([all_issues, all_pull_requests, all_issue_links], cache_file, self.cache_dir)
-
         self.store_issues(all_issues, issue_file_path)
-        print('Stored issues in '+ issue_file_path )
+        print("Stored issues in "+ issue_file_path)
 
         self.store_pull_requests(all_pull_requests)
-        print('Stored pull requests data' )
+        print("Stored pull requests data")
 
         self.store_links(all_issue_links)
-        print('Stored links')
+        print("Stored links")
 
         if self.training:
             self.extract_links_for_training()
-            print('Extracted type 1 links for training')
+            print("Extracted type 1 links for training")
 
     def create_issue_commit_dataset(self):
         """
@@ -546,25 +548,24 @@ class GitRepoCollector:
 
         # Get all the commits possible using local git.        
         if not os.path.isfile(commit_file_path):
-            print('Fetching commits...')
-            
+            print("Fetching commits...")
             self.get_commits(commit_file_path)
-            print('Commits saved to ' + commit_file_path)
+            print("Commits saved to " + commit_file_path)
         else:
-            print('Commits already stored in '+ commit_file_path)
+            print("Commits already stored in " + commit_file_path)
 
         # handle the issues and pull requests
         self.get_issue_links(issue_file_path)
         return output_dir
 
 if __name__ == "__main__":
-    download_dir = '../../../git_repos'
-    repo_path = 'fastapi/fastapi'
+    download_dir = "../../../git_repos"
+    repo_path = "fastapi/fastapi"
 
     config = configparser.ConfigParser()
-    config.read('credentials.cfg')
-    git_token = config['github']['token']
+    config.read("credentials.cfg")
+    git_token = config["github"]["token"]
 
-    output_dir = '../../data/git_data'
+    output_dir = "../../data/git_data"
     rpc = GitRepoCollector(git_token, download_dir, output_dir, repo_path)
     rpc.create_issue_commit_dataset()

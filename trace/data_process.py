@@ -16,7 +16,7 @@ import emoji
 from git_repo_collector import GitRepoCollector, Commits, Issues, Links
 import nltk
 
-nltk.download('punkt_tab')
+nltk.download("punkt_tab")
 from nltk.tokenize import word_tokenize
 
 import warnings
@@ -32,41 +32,41 @@ class DataProcess:
         df = pd.DataFrame(art_list)
         df.to_csv(output_file, index=True)
 
-    def read_OSS_artifacts(self, file_path, type, artifact = None, clean=False):
+    def read_OSS_artifacts(self, file_path, type, artifact = None, clean=False):        
         df = pd.read_csv(file_path, keep_default_na=False)
-        if type == 'commit':
+        if type == "commit":
             artifact = Commits()
             for index, row in df.iterrows():
-                artifact.add_commit(commit_id=row['commit_id'], summary=row['summary'], diff_added=row['diff_added'], 
-                                    diff_removed=row['diff_removed'], files=row['files'], commit_time=row['commit_time'])
+                artifact.add_commit(commit_id=row["commit_id"], summary=row["summary"], diff_added=row["diff_added"], 
+                                    diff_removed=row["diff_removed"], files=row["files"], commit_time=row["commit_time"])
             commit_list = artifact.get_all_commits()
             if not clean:
                 return commit_list
             else:
                 commits_dict = {}
                 for commit in commit_list:
-                    commits_dict[commit['commit_id']] = commit
+                    commits_dict[commit["commit_id"]] = commit
                 return commits_dict
             
-        elif type=='issue':
+        elif type=="issue":
                 artifact = Issues()
                 for index, row in df.iterrows():
-                    artifact.add_issue(number=row['issue_id'], body=row['issue_desc'], comments=row['issue_comments'], 
-                                        createdAt=row['created_at'], updatedAt=row['closed_at'])
+                    artifact.add_issue(number=row["issue_id"], body=row["issue_desc"], comments=row["issue_comments"], 
+                                        createdAt=row["created_at"], updatedAt=row["closed_at"])
                 issue_list = artifact.get_all_issues()
                 if not clean:
                     return issue_list
                 else:
                     issues_dict = {}
                     for issue in issue_list:
-                        issues_dict[issue['issue_id']] = issue
+                        issues_dict[issue["issue_id"]] = issue
                     return issues_dict
-        elif type == 'link':
+        elif type == "link":
             if not clean:
                 return df
             artifact = []
             for index, row in df.iterrows():
-                artifact.append((row['issue_id'], row['commit_id']))
+                artifact.append((row["issue_id"], row["commit_id"]))
             return artifact
 
 
@@ -209,16 +209,16 @@ def main(args):
     logger.setLevel("INFO")
 
     config = configparser.ConfigParser()
-    config.read('credentials.cfg')
+    config.read("credentials.cfg")
 
     proj_data_dir = os.path.join(args.root_data_dir, args.repo_path)
         
-    if not (os.path.exists(os.path.join(proj_data_dir, 'clean_issue.csv')) 
-            and os.path.exists(os.path.join(proj_data_dir, 'clean_commit.csv'))):
+    if not (os.path.exists(os.path.join(proj_data_dir, "clean_issue.csv")) 
+            and os.path.exists(os.path.join(proj_data_dir, "clean_commit.csv"))):
         # if the issue_csv is not available
         logger.info("Processing repo: {}".format(args.repo_path))
-        git_token = config['github']['token']
-        download_dir = '../../../git_repos'
+        git_token = config["github"]["token"]
+        download_dir = "../../../git_repos"
         rpc = GitRepoCollector(git_token, download_dir, args.root_data_dir, 
                                args.repo_path, training=args.training)
         rpc.create_issue_commit_dataset()
@@ -233,21 +233,21 @@ def main(args):
         return
 
     # Create training splits if needed
-    clean_issue_file = os.path.join(proj_data_dir, 'clean_issue.csv')
-    clean_commits_file = os.path.join(proj_data_dir, 'clean_commit.csv')
-    clean_links_file = os.path.join(proj_data_dir, 'clean_link.csv')
+    clean_issue_file = os.path.join(proj_data_dir, "clean_issue.csv")
+    clean_commits_file = os.path.join(proj_data_dir, "clean_commit.csv")
+    clean_links_file = os.path.join(proj_data_dir, "clean_link.csv")
     
     data_processing = DataProcess(args.training)
-    clean_issues = data_processing.read_OSS_artifacts(clean_issue_file, 'issue', clean=True)
-    clean_commits = data_processing.read_OSS_artifacts(clean_commits_file, 'commit', clean=True)
-    clean_links = data_processing.read_OSS_artifacts(clean_links_file, 'link', clean=True)
+    clean_issues = data_processing.read_OSS_artifacts(clean_issue_file, "issue", clean=True)
+    clean_commits = data_processing.read_OSS_artifacts(clean_commits_file, "commit", clean=True)
+    clean_links = data_processing.read_OSS_artifacts(clean_links_file, "link", clean=True)
     
     data_processing.split(clean_issues, clean_commits, clean_links, proj_data_dir)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--repo_path", default="pallets/flask")
+    parser.add_argument("--repo_path", default="scikit-learn/scikit-learn")
     parser.add_argument("--root_data_dir", default="../../data/git_data/training related data v2")
     parser.add_argument("--training", default=True)
 

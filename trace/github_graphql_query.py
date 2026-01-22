@@ -1,12 +1,35 @@
 import requests
 import configparser
+from tqdm import tqdm
+
 # GitHub GraphQL API URL
 GITHUB_GRAPHQL_URL = "https://api.github.com/graphql"
+
+GITHUB_GRAPHQL_COUNT_QUERY = """
+query($owner: String!, $name: String!) {
+  repository(owner: $owner, name: $name) {
+    issues {
+      totalCount
+    }
+    pullRequests {
+      totalCount
+    }
+  }
+  rateLimit {
+    limit
+    cost
+    remaining
+    resetAt
+  }
+}
+"""
+
+ITEMS_PER_PAGE = 20
 
 GITHUB_GRAPHQL_QUERY = """
 query($issuesTimelineCursor: String, $issuesCursor: String, $pullRequestsCursor: String, $owner: String!, $name: String!) {
   repository(owner: $owner, name: $name) {
-    issuesWithTimeline: issues(first: 25, after: $issuesTimelineCursor) {
+    issuesWithTimeline: issues(first: 20, after: $issuesTimelineCursor) {
       pageInfo {
         endCursor
         hasNextPage
@@ -82,7 +105,7 @@ query($issuesTimelineCursor: String, $issuesCursor: String, $pullRequestsCursor:
         }
       }
     }
-    basicIssues: issues(first: 25, after: $issuesCursor) { 
+    basicIssues: issues(first: 20, after: $issuesCursor) { 
     	pageInfo {
         endCursor
         hasNextPage
@@ -105,7 +128,7 @@ query($issuesTimelineCursor: String, $issuesCursor: String, $pullRequestsCursor:
         }
       }
     }
-    pullRequests(first: 25, after: $pullRequestsCursor) {
+    pullRequests(first: 20, after: $pullRequestsCursor) {
       pageInfo {
         endCursor
         hasNextPage
@@ -171,99 +194,151 @@ query($issuesTimelineCursor: String, $issuesCursor: String, $pullRequestsCursor:
 """
 TEST_REPO_PATH = "pallets/flask"
 
-def make_github_graphql_request(token, variables):
-        """
-        Makes a GraphQL request to GitHub API.
+def make_github_graphql_request(token, query, variables):
+    """
+    Makes a GraphQL request to GitHub API.
 
-        Args:
-        - token: GitHub personal access token
-        - query: GraphQL query string
-        - variables: Variables for the GraphQL query
+    Args:
+    - token: GitHub personal access token
+    - query: GraphQL query string
+    - variables: Variables for the GraphQL query 
 
-        Returns:
-        - JSON response from GitHub API
-        """
+    Returns:
+    - JSON response from GitHub API
+    """
 
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json"
-        }
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
 
-        try:
-            response = requests.post(
-                GITHUB_GRAPHQL_URL,
-                headers=headers,
-                json={"query": GITHUB_GRAPHQL_QUERY, "variables": variables}
-            )
-            if response.status_code == 200:
-                return response.json()
+    try:
+        response = requests.post(
+            GITHUB_GRAPHQL_URL,
+            headers=headers,
+            json={"query": query, "variables": variables}
+        )
+        if response.status_code == 200:
+            return response.json()
 
-        except requests.exceptions.RequestException as e:
-            print(f"Error making GraphQL request: {e}")
-            return None
+    except requests.exceptions.RequestException as e:
+        print(f"Error making GraphQL request: {e}")
+        return None
         
 
+def count_graphql_elements(repo_path, token):
+    """
+    Counts the number of issues and pull requests in a repo 
+
+    Args:
+    - repo_path: Path of GitHub Repo
+    - token: GitHub personal access token 
+
+    Returns:
+    - the issue count and pull request count of the repo as a tuple
+    """
+    owner, name = repo_path.split('/')
+    variables = {
+      "owner": owner,
+      "name": name
+    }
+    
+    issue_count = 0
+    pr_count = 0
+    
+    response_data = make_github_graphql_request(token, 
+                        GITHUB_GRAPHQL_COUNT_QUERY, variables)
+    
+    if response_data:
+    
+      try:
+        repo_data = response_data["data"]["repository"]
+        issue_count = repo_data["issues"]["totalCount"]
+        pr_count = repo_data["pullRequests"]["totalCount"] 
+    
+      except:
+        print('Error occured while executing query')
+    
+    else:
+        print("GraphQL request failed, stopping further processing.")
+    
+    return issue_count, pr_count
+
 def run_graphql_query(repo_path, token):
-        """
-				Executes a GraphQL query to fetch issues, pull requests, and issue links from a GitHub repository.
+    """
+    Executes a GraphQL query to fetch issues, pull requests, and issue links from a GitHub repository.
 
-				Args:
-						repo_path (str): The path to the GitHub repository.
-						token (str): The GitHub token for authentication.
+    Args:
+        repo_path (str): The path to the GitHub repository.
+        token (str): The GitHub token for authentication.
 
-				Returns:
-						tuple: A tuple containing lists of all issues, all pull requests, and all issue links.
-				"""
-        owner, name = repo_path.split('/')
+    Returns:
+        tuple: A tuple containing lists of all issues, all pull requests, and all issue links.
+    """
+    owner, name = repo_path.split('/')
 
-        variables = {
-            "issuesTimelineCursor": None,
-            "issuesCursor": None,
-            "pullRequestsCursor": None,
-            "owner": owner,
-            "name": name
-        }
+    variables = {
+        "issuesTimelineCursor": None,
+        "issuesCursor": None,
+        "pullRequestsCursor": None,
+        "owner": owner,
+        "name": name
+    }
 
-        all_issues = []
-        all_pull_requests = []
-        all_issue_links = []
+    all_issues = []
+    all_pull_requests = []
+    all_issue_links = []
 
-        # Make the GraphQL request using the imported function
-        while True:
-            hasNextPage = False
-            response_data = make_github_graphql_request(token, variables)
-            if response_data:
-                try:
+    # Define a progress bar with no limit
+    
+    pbar = tqdm(
+        desc="Requesting pages",
+        total=max(count_graphql_elements(repo_path, token))//ITEMS_PER_PAGE
+    )
+    pages_count = 0
 
-                    basic_issues = response_data["data"]["repository"]["basicIssues"]
-                    pull_requests = response_data["data"]["repository"]["pullRequests"]
-                    issues_with_timeline = response_data["data"]["repository"]["issuesWithTimeline"]
+    # Make the GraphQL request using the imported function 
+    while True:
+        hasNextPage = False
+        response_data = make_github_graphql_request(token, 
+                            GITHUB_GRAPHQL_QUERY, variables)
+        if response_data:
+            try:
 
-                    # Append issues and pull requests data
-                    all_issues.extend(basic_issues["edges"])
-                    all_pull_requests.extend(pull_requests["edges"])
-                    all_issue_links.extend(issues_with_timeline["edges"])
+                basic_issues = response_data["data"]["repository"]["basicIssues"]
+                pull_requests = response_data["data"]["repository"]["pullRequests"]
+                issues_with_timeline = response_data["data"]["repository"]["issuesWithTimeline"]
 
-                    # Check for pagination
-                    if basic_issues["pageInfo"]["hasNextPage"]:
-                        variables["issuesCursor"] = basic_issues["pageInfo"]["endCursor"]
-                        hasNextPage = True
-                    if pull_requests["pageInfo"]["hasNextPage"]:
-                        variables["pullRequestsCursor"] = pull_requests["pageInfo"]["endCursor"]
-                        hasNextPage = True
-                    if issues_with_timeline["pageInfo"]["hasNextPage"]:
-                        variables["issuesTimelineCursor"] = issues_with_timeline["pageInfo"]["endCursor"]
-                        hasNextPage = True
-                    
-                    if not hasNextPage:
-                        break
-                except:
-                    print('Error occured while executing query')
+                # Append issues and pull requests data
+                all_issues.extend(basic_issues["edges"])
+                all_pull_requests.extend(pull_requests["edges"])
+                all_issue_links.extend(issues_with_timeline["edges"])
+
+                # Check for pagination
+                if basic_issues["pageInfo"]["hasNextPage"]:
+                    variables["issuesCursor"] = basic_issues["pageInfo"]["endCursor"]
+                    hasNextPage = True
+                if pull_requests["pageInfo"]["hasNextPage"]:
+                    variables["pullRequestsCursor"] = pull_requests["pageInfo"]["endCursor"]
+                    hasNextPage = True
+                if issues_with_timeline["pageInfo"]["hasNextPage"]:
+                    variables["issuesTimelineCursor"] = issues_with_timeline["pageInfo"]["endCursor"]
+                    hasNextPage = True
+                
+                if not hasNextPage:
                     break
-            else:
-                print("GraphQL request failed, stopping further processing.")
+                
+                # Show progress bar
+                pages_count += 1
+                pbar.n = pages_count
+                pbar.refresh()
+            except:
+                print('Error occured while executing query')
                 break
-        return all_issues, all_pull_requests, all_issue_links
+        else:
+            print("GraphQL request failed, stopping further processing.")
+            break
+    return all_issues, all_pull_requests, all_issue_links
 
 
 if __name__ == "__main__":
@@ -271,5 +346,5 @@ if __name__ == "__main__":
     config = configparser.ConfigParser()
     config.read("credentials.cfg")
     token = config.get("github", "token")
-    issues, pull_requests, issue_links = run_graphql_query(TEST_REPO_PATH, token)
-    print(issues, pull_requests, issue_links)
+    all_issues, all_pull_requests, all_issue_links = run_graphql_query(TEST_REPO_PATH, token)
+    print("Done")
