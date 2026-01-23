@@ -24,12 +24,12 @@ query($owner: String!, $name: String!) {
 }
 """
 
-ITEMS_PER_PAGE = 20
+ITEMS_PER_PAGE = 15
 
 GITHUB_GRAPHQL_QUERY = """
 query($issuesTimelineCursor: String, $issuesCursor: String, $pullRequestsCursor: String, $owner: String!, $name: String!) {
   repository(owner: $owner, name: $name) {
-    issuesWithTimeline: issues(first: 20, after: $issuesTimelineCursor) {
+    issuesWithTimeline: issues(first: 15, after: $issuesTimelineCursor) {
       pageInfo {
         endCursor
         hasNextPage
@@ -105,7 +105,7 @@ query($issuesTimelineCursor: String, $issuesCursor: String, $pullRequestsCursor:
         }
       }
     }
-    basicIssues: issues(first: 20, after: $issuesCursor) { 
+    basicIssues: issues(first: 15, after: $issuesCursor) { 
     	pageInfo {
         endCursor
         hasNextPage
@@ -128,7 +128,7 @@ query($issuesTimelineCursor: String, $issuesCursor: String, $pullRequestsCursor:
         }
       }
     }
-    pullRequests(first: 20, after: $pullRequestsCursor) {
+    pullRequests(first: 15, after: $pullRequestsCursor) {
       pageInfo {
         endCursor
         hasNextPage
@@ -192,6 +192,7 @@ query($issuesTimelineCursor: String, $issuesCursor: String, $pullRequestsCursor:
 }
 
 """
+
 TEST_REPO_PATH = "pallets/flask"
 
 def make_github_graphql_request(token, query, variables):

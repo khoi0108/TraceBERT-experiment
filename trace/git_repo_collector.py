@@ -516,7 +516,8 @@ class GitRepoCollector:
             # get all the issues, pull requests and issue links using the graphql api
             print("Fetching issues, pull requests, and links")
             all_issues, all_pull_requests, all_issue_links = run_graphql_query(self.repo_path, self.token)
-            utils.save_cache([all_issues, all_pull_requests, all_issue_links], cache_file, self.cache_dir)
+            if all_issues:
+                utils.save_cache([all_issues, all_pull_requests, all_issue_links], cache_file, self.cache_dir)
         self.store_issues(all_issues, issue_file_path)
         print("Stored issues in "+ issue_file_path)
 

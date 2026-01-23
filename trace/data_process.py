@@ -16,6 +16,9 @@ import emoji
 from git_repo_collector import GitRepoCollector, Commits, Issues, Links
 import nltk
 
+sys.path.append("..")
+sys.path.append("../..")
+
 nltk.download("punkt_tab")
 from nltk.tokenize import word_tokenize
 
