@@ -8,7 +8,7 @@ sys.path.append("../..")
 
 from code_search.single.single_train import train_single_iteration
 from code_search.twin.twin_train import get_train_args, init_train_env, train
-from data_process import __read_artifacts
+from data_process import DataProcess
 from common.data_structures import Examples
 from common.models import TBertT, TBertI, TBertI2
 
@@ -20,17 +20,23 @@ def read_OSS_examples(data_dir):
     issue_file = os.path.join(data_dir, "issue_file")
     link_file = os.path.join(data_dir, "link_file")
     examples = []
-    issues = __read_artifacts(issue_file, "issue")
-    commits = __read_artifacts(commit_file, "commit")
-    links = __read_artifacts(link_file, "link")
-    issue_index = {x.issue_id: x for x in issues}
-    commit_index = {x.commit_id: x for x in commits}
+    data_processor = DataProcess(False) 
+    issues = data_processor.read_OSS_artifacts(issue_file, "issue", clean=True)
+    commits = data_processor.read_OSS_artifacts(commit_file, "commit", clean=True)
+    links = data_processor.read_OSS_artifacts(link_file, "link", clean=True)
+    
+    if not (isinstance(issues, dict) and isinstance(commits, dict)):
+        return examples
+    
+    if not isinstance(links, list):
+        return examples
+
     for lk in links:
-        iss = issue_index[lk[0]]
-        cm = commit_index[lk[1]]
+        iss = issues[lk[0]]
+        cm = commits[lk[1]]
         # join the tokenized content
-        iss_text = iss.desc + " " + iss.comments
-        cm_text = cm.summary + " " + cm.diffs
+        iss_text = f"{iss['issue_desc']} {iss['issue_comments']}"
+        cm_text = f"{cm['summary']} [A] {cm['diff_added']} [/A] [D] {cm['diff_removed']} [/D]"
         example = {
             "NL": iss_text,
             "PL": cm_text
@@ -60,6 +66,9 @@ def main():
     valid_dir = os.path.join(args.data_dir, "valid")
     train_examples = load_examples(train_dir, model=model, num_limit=args.train_num)
     valid_examples = load_examples(valid_dir, model=model, num_limit=args.valid_num)
+    if not train_examples or not valid_examples:
+        logger.info("Example loading error.")    
+        return
     train(args, train_examples, valid_examples, model, train_single_iteration)
     logger.info("Training finished")
 
