@@ -12,6 +12,7 @@ Cython
 Deprecated
 docker-pycreds
 docutils
+emoji
 filelock
 future
 gensim
