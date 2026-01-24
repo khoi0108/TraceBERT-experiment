@@ -1,6 +1,6 @@
 .idea
 venv
-*/data/*
+*data*
 cola_*
 cache
 */model
@@ -14,10 +14,9 @@ __pycache__
 **/classify_model/*.csv
 **/retrival_model/*.csv
 **/debug_output/
-evaluation/
+*result*
 *.log
 debug_output/*
-results
 *.dat
 credentials.cfg
 !**/crc/evaluation
