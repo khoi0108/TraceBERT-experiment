@@ -220,7 +220,7 @@ def main(args):
         # if the issue_csv is not available
         logger.info("Processing repo: {}".format(args.repo_path))
         git_token = config["github"]["token"]
-        download_dir = "../../../git_repos"
+        download_dir = "../../git_repos"
         rpc = GitRepoCollector(git_token, download_dir, args.root_data_dir, 
                                args.repo_path, training=args.training)
         rpc.create_issue_commit_dataset()
@@ -250,7 +250,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo_path", default="scikit-learn/scikit-learn")
-    parser.add_argument("--root_data_dir", default="../../data/git_data/training related data v2")
+    parser.add_argument("--root_data_dir", default="../data/git_data/training related data v2")
     parser.add_argument("--training", default=True)
 
     main(parser.parse_args())

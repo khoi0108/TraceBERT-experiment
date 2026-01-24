@@ -555,13 +555,13 @@ class GitRepoCollector:
         return output_dir
 
 if __name__ == "__main__":
-    download_dir = "../../../git_repos"
+    download_dir = "../../git_repos"
     repo_path = "fastapi/fastapi"
 
     config = configparser.ConfigParser()
     config.read("credentials.cfg")
     git_token = config["github"]["token"]
 
-    output_dir = "../../data/git_data"
+    output_dir = "../data/git_data"
     rpc = GitRepoCollector(git_token, download_dir, output_dir, repo_path)
     rpc.create_issue_commit_dataset()
