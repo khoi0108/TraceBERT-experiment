@@ -36,7 +36,7 @@ def read_OSS_examples(data_dir):
         cm = commits[lk[1]]
         # join the tokenized content
         iss_text = f"{iss['issue_desc']} {iss['issue_comments']}"
-        cm_text = f"{cm['summary']} [A] {cm['diff_added']} [/A] [D] {cm['diff_removed']} [/D]"
+        cm_text = f"{cm['summary']} ADDED_LINES {cm['diff_added']} REMOVED_LINES {cm['diff_removed']}"
         example = {
             "NL": iss_text,
             "PL": cm_text
