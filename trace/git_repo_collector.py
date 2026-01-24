@@ -3,17 +3,12 @@ import logging
 import os
 import time
 import configparser
-
-from github import Github, \
-    RateLimitExceededException  # pip install PyGithub. Lib operates on remote github to get issues
-import pygit2
 import re
 import argparse
 import git as local_git  # pip install GitPython. Lib operates on local repo to get commits
 import pandas as pd
 from tqdm import tqdm
 import json
-from collections import deque
 import utils
 
 logger = logging.getLogger(__name__)

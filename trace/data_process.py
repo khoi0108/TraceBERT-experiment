@@ -5,7 +5,6 @@ import logging
 import configparser
 import re
 import sys
-import numpy as np
 import random
 import argparse
 import os
