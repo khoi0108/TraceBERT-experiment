@@ -3,8 +3,6 @@ import logging
 import os
 import time
 import configparser
-import re
-import argparse
 import git as local_git  # pip install GitPython. Lib operates on local repo to get commits
 import pandas as pd
 from tqdm import tqdm
@@ -136,20 +134,26 @@ class GitRepoCollector:
         cache_dir (str): The directory where the cache data will be stored.
     """
 
-    def __init__(self, token, download_path, root_data_dir, repo_path, cache_dir = None, training=False):
+    def __init__(self, token, download_path, root_data_dir, repo_path, 
+                 cache_dir = None, training=False, extra_link_types=[]):
         self.token = token 
         self.download_path = download_path
         self.repo_path = repo_path
+        
         self.output_dir = root_data_dir
         self.cache_dir = os.path.join('./cache/' + repo_path) if not cache_dir else cache_dir
+        
         self.commits_collection = Commits()
         self.issues_collection = Issues()
         self.pr_collection = PullRequests()
+        
         self.t1_link_collection = Links()
         self.t2_link_collection = Links()
         # a seperate collection for chained links
         self.t3_link_collection = Links()
+        
         self.training = training
+        self.extra_link_types = extra_link_types
 
     def clone_project(self):
         """
@@ -174,8 +178,9 @@ class GitRepoCollector:
 
     def get_commits(self, commit_file_path):
         """
-        Retrieves commit data from a cloned local repository, processes the data, and stores it in a CSV file.
-        If the CSV file already exists, the method logs a message and returns, skipping the creation process.
+        Retrieves commit data from a cloned local repository, processes 
+        the data, and stores it in a CSV file. If the CSV file already exists,
+        the method logs a message and returns, skipping the creation process.
 
         Args:
             commit_file_path (str): The path where the resulting CSV file will be saved.
@@ -189,7 +194,7 @@ class GitRepoCollector:
             print("Commits already existing, skip creating...")
             return
         print("Creating commit.csv...")
-        commit_df = pd.DataFrame(columns=["commit_id", "summary", "diff_added", "diff_removed", "files", "commit_time"])
+        commit_df = pd.DataFrame(columns=["commit_id", "s   ummary", "diff_added", "diff_removed", "files", "commit_time"])
         processed_commits = set()
 
         # Iterate over all branches, including remote branches
@@ -248,8 +253,10 @@ class GitRepoCollector:
                     "files": files,
                     "commit_time": create_time
                 }
-                self.commits_collection.add_commit(id, summary, diff_added, diff_removed, files, create_time)
-                commit_df = pd.concat([commit_df, pd.DataFrame([commit_record])], ignore_index=True)
+                self.commits_collection.add_commit(id, summary, diff_added, 
+                                                   diff_removed, files, create_time)
+                commit_df = pd.concat([commit_df, 
+                                      pd.DataFrame([commit_record])], ignore_index=True)
                 processed_commits.add(id)
         commit_df.to_csv(commit_file_path)
 
@@ -331,12 +338,13 @@ class GitRepoCollector:
                 comments=comments
             )
             issue_df = pd.concat([issue_df, pd.DataFrame([issue])], ignore_index=True)
-            issue_df.to_csv(issue_file_path)
+        issue_df.to_csv(issue_file_path)
     
     def store_links(self, all_issue_links):
         """
-        Processes each issue link in the all_issue_links list, handles different types of events 
-        and adds the processed links to a collection. It then saves the link data to a file at the specified path.
+        Processes each issue link in the all_issue_links list, handles 
+        different types of events and adds the processed links to a collection. 
+        It then saves the link data to a file at the specified path.
         
         Args:
             all_issue_links (list): A list of issue links, each represented as a dictionary.
@@ -454,12 +462,15 @@ class GitRepoCollector:
             if len(commits_for_pr):
                 self.t2_link_collection.add_links(current_issue_id, commits_for_pr)
         
-        utils.chain_related_issues(chained_issue_sets, self.t1_link_collection, self.t2_link_collection, self.t3_link_collection)
-        json_serializable_data = {key: list(value) for key, value in self.t1_link_collection.get_all_links().items()}        
+        utils.chain_related_issues(chained_issue_sets, self.t1_link_collection, 
+                                   self.t2_link_collection, self.t3_link_collection)
+        json_serializable_data = {key: list(value) for key, value in self.t1_link_collection.get_all_links().items()}
+
         with open(t1_file_path, 'w') as json_file:
             json.dump(json_serializable_data, json_file, indent=2)
 
         json_serializable_data = {key: list(value) for key, value in self.t2_link_collection.get_all_links().items()}        
+        
         with open(t2_file_path, 'w') as json_file:
             json.dump(json_serializable_data, json_file, indent=2)
 
@@ -468,13 +479,24 @@ class GitRepoCollector:
         with open(t3_file_path, 'w') as json_file:
             json.dump(json_serializable_data, json_file, indent=2)
 
-    def extract_links_for_training(self):
+    def extract_links_for_training(self, extra_link_types=[]):
         """ 
-        Extracts all type 1 links from the object and prepares link file for training.
+        Extracts links of specified types from the object and prepares link file for training.
+        Links involve at least type 1. Type 2 and 3 are optional.
+
+        Args:
+            t2_links (bool): Whether to include T2 links in the training data. Defaults to False.
+            t3_links (bool): Whether to include T3 links in the training data. Defaults to False.
+
         """
 
         link_file_path = os.path.join(self.output_dir, self.repo_path, "link.csv")
         links_for_training = self.t1_link_collection.get_all_links()
+        if "2" in extra_link_types:
+            links_for_training.update(self.t2_link_collection.get_all_links())
+        if "3" in extra_link_types:
+            links_for_training.update(self.t3_link_collection.get_all_links())
+        
         # Extract links from the commits
         if os.path.isfile(link_file_path):
             logger.info("Link file already exists, skip creating...")
@@ -504,7 +526,7 @@ class GitRepoCollector:
         cache_data = utils.load_cache(cache_file, self.cache_dir)
 
         # If cache is valid, use cached data
-        if cache_data and time.time() - os.path.getmtime(os.path.join(self.cache_dir, cache_file)) < 3600000:
+        if cache_data and time.time() - os.path.getmtime(os.path.join(self.cache_dir, cache_file)) < 360000:
             print("Cache file exist in cache directory. Fetching query response from cache")
             all_issues, all_pull_requests, all_issue_links = cache_data
         else:
@@ -523,8 +545,8 @@ class GitRepoCollector:
         print("Stored links")
 
         if self.training:
-            self.extract_links_for_training()
-            print("Extracted type 1 links for training")
+            self.extract_links_for_training(self.extra_link_types)
+            print("Extracted links for training")
 
     def create_issue_commit_dataset(self):
         """

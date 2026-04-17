@@ -8,11 +8,9 @@ import sys
 import random
 import argparse
 import os
-import json
-import csv
 import emoji
 
-from git_repo_collector import GitRepoCollector, Commits, Issues, Links
+from git_repo_collector import GitRepoCollector, Commits, Issues
 import nltk
 
 sys.path.append("..")
@@ -214,7 +212,19 @@ def main(args):
     config.read("credentials.cfg")
 
     proj_data_dir = os.path.join(args.root_data_dir, args.repo_path)
-        
+    
+    # This is to store the extra link types specified for training. 
+    # By default, only type 1 links will be included in the dataset.
+    extra_link_types = []
+
+    if args.extra_link_types and args.training:
+        extra_link_types = args.extra_link_types.split(",")
+        if "2" in extra_link_types:
+            logger.info("Including type 2 links for training.")
+        if "3" in extra_link_types:
+            logger.info("Including type 3 links for training.")
+        logger.info(f"Extra link types specified for training: {', '.join(extra_link_types)}")
+
     if not (os.path.exists(os.path.join(proj_data_dir, "clean_issue.csv")) 
             and os.path.exists(os.path.join(proj_data_dir, "clean_commit.csv"))):
         # if the issue_csv is not available
@@ -222,11 +232,11 @@ def main(args):
         git_token = config["github"]["token"]
         download_dir = "../../git_repos"
         rpc = GitRepoCollector(git_token, download_dir, args.root_data_dir, 
-                               args.repo_path, training=args.training)
+                               args.repo_path, training=args.training, 
+                               extra_link_types=extra_link_types)
         rpc.create_issue_commit_dataset()
 
         data_processing = DataProcess(args.training)
-
         data_processing.clean_artifacts(proj_data_dir)
     
     logger.info("Cleaned issues and commits are stored")
@@ -243,14 +253,19 @@ def main(args):
     clean_issues = data_processing.read_OSS_artifacts(clean_issue_file, "issue", clean=True)
     clean_commits = data_processing.read_OSS_artifacts(clean_commits_file, "commit", clean=True)
     clean_links = data_processing.read_OSS_artifacts(clean_links_file, "link", clean=True)
-    
+
     data_processing.split(clean_issues, clean_commits, clean_links, proj_data_dir)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--repo_path", default="scikit-learn/scikit-learn")
-    parser.add_argument("--root_data_dir", default="../data/git_data/training related data v2")
+    parser.add_argument("--repo_path", default="CodingTrain/Rainbow-Poem")
+    parser.add_argument("--root_data_dir", default="../data/git_data/training related data")
     parser.add_argument("--training", default=True)
+    
+    # This is to specify whether to include type 2 and 3 links in the dataset.
+    # If not specified, only type 1 links will be included.
+    # Link types are separated by comma, e.g., "2,3"
+    parser.add_argument("--extra_link_types", default="")
 
     main(parser.parse_args())
